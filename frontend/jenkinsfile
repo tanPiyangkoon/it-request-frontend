@@ -1,0 +1,91 @@
+pipeline {
+  agent any
+
+  environment {
+    DOCKER_IMAGE          = 'tanpiyangkoon/it-request-frontend'
+    DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
+    GITOPS_REPO           = 'https://github.com/tanPiyangkoon/it-request-frontend-kustomize.git'
+    GITOPS_BRANCH         = 'staging'
+    GITOPS_CREDENTIALS_ID = 'github-token'
+    ARGOCD_APP            = 'it-request-frontend-service'
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        git branch: 'main', url: 'https://github.com/tanPiyangkoon/it-request-frontend.git'
+      }
+    }
+
+    stage('Build & Push Docker Image') {
+      steps {
+        script {
+          def shortCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+          env.IMG_TAG = shortCommit
+
+          withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}",
+                                            usernameVariable: 'DOCKER_USER',
+                                            passwordVariable: 'DOCKER_PASS')]) {
+            sh '''
+              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+              docker build -t ${DOCKER_IMAGE}:${IMG_TAG} -f frontend/Dockerfile frontend
+              docker push ${DOCKER_IMAGE}:${IMG_TAG}
+              docker logout
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Update GitOps (Kustomize)') {
+      steps {
+        script {
+          withCredentials([usernamePassword(credentialsId: "${GITOPS_CREDENTIALS_ID}",
+                                            usernameVariable: 'GIT_USER',
+                                            passwordVariable: 'GIT_TOKEN')]) {
+            sh '''
+              set -e
+              rm -rf k8s-config
+              git config --global url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+              git clone -b ${GITOPS_BRANCH} ${GITOPS_REPO} k8s-config
+              cd k8s-config/base/frontend
+
+              if command -v yq >/dev/null 2>&1; then
+                yq -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\").newTag) = \\"${IMG_TAG}\\"" kustomization.yaml
+              else
+                sed -i "/name: ${DOCKER_IMAGE}/,/newTag:/ s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
+              fi
+
+              git config user.email "jenkins@local"
+              git config user.name "Jenkins CI"
+              git add kustomization.yaml
+              git commit -m "CI: bump frontend ${DOCKER_IMAGE}:${IMG_TAG}" || true
+              git push origin ${GITOPS_BRANCH}
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Trigger ArgoCD Sync') {
+      steps {
+        script {
+          sh '''
+            echo "Triggering ArgoCD sync..."
+            argocd app sync ${ARGOCD_APP} --grpc-web --insecure || true
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "✅ Frontend pipeline completed successfully."
+    }
+    failure {
+      echo "❌ Pipeline failed – check logs."
+    }
+  }
+}
