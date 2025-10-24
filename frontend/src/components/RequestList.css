@@ -1,0 +1,115 @@
+/* Orange theme for request list */
+.request-list-container {
+  max-width: 950px;
+  margin: 2.5rem auto;
+  background: #fff3e0;
+  border-radius: 14px;
+  box-shadow: 0 2px 16px rgba(255,152,0,0.13);
+  padding: 2.5rem 2rem 2rem 2rem;
+}
+
+.request-list-title {
+  color: #ff9800;
+  margin-bottom: 1.5rem;
+  font-size: 1.6rem;
+  font-weight: bold;
+  text-align: center;
+}
+
+.request-list-search-form {
+  margin-bottom: 1.5rem;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.request-list-search-input {
+  flex: 1;
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  border: 1.5px solid #ffe0b2;
+  font-size: 1rem;
+  max-width: 350px;
+  background: #fff;
+  transition: border 0.2s;
+}
+.request-list-search-input:focus {
+  border: 1.5px solid #ff9800;
+  background: #fffde7;
+}
+
+.request-list-search-btn {
+  padding: 0.7rem 1.5rem;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #ff9800 60%, #ffb300 100%);
+  color: #fff;
+  border: none;
+  font-weight: 500;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.request-list-search-btn:hover {
+  background: #ff9800;
+}
+
+.request-list-table-wrapper {
+  overflow-x: auto;
+}
+
+.request-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1rem;
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.request-list-table th, .request-list-table td {
+  padding: 12px 10px;
+  text-align: left;
+}
+
+.request-list-table th {
+  background: #ffe0b2;
+  font-weight: 600;
+  color: #ff9800;
+}
+
+.request-list-table tr {
+  border-bottom: 1px solid #ffd180;
+}
+
+.request-list-table tr:last-child {
+  border-bottom: none;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.35em 1em;
+  border-radius: 1em;
+  font-size: 0.98em;
+  font-weight: 500;
+  background: #ffe0b2;
+  color: #ff9800;
+}
+.status-pending {
+  background: #fffbe6;
+  color: #ffb300;
+}
+.status-approve, .status-success, .status-done {
+  background: #e6f9ed;
+  color: #43a047;
+}
+.status-reject, .status-cancel {
+  background: #ffeaea;
+  color: #e53935;
+}
+
+.request-list-loading, .request-list-error, .request-list-empty {
+  text-align: center;
+  margin: 2rem 0;
+  font-size: 1.1rem;
+  color: #ff9800;
+}

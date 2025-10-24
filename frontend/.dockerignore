@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Development files (ใช้แค่ dist ใน production)
+src/
+public/
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Configuration files
+vite.config.js
+eslint.config.js
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs/
+*.log
+
+# Build artifacts (เก็บ dist เท่านั้น)
+dist-ssr/
+*.local
+
+# Environment
+.env
+.env.*
+!.env.example

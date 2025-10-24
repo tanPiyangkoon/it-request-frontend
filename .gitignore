@@ -1,0 +1,70 @@
+# ========================================================
+# ⚙️ Node / Vite / Frontend Project .gitignore Template
+# ========================================================
+
+# Node modules
+node_modules/
+
+# Build output (compiled frontend)
+dist/
+build/
+
+# Environment files
+.env
+.env.*.local
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / IDE
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Local configuration
+*.local
+*.cache
+*.lock
+.cache/
+.tmp/
+temp/
+
+# OS system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Docker-related
+docker-compose.override.yml
+Dockerfile.dev
+*.tar
+*.bak
+
+# Coverage / Testing
+coverage/
+*.lcov
+jest-cache/
+jest-output/
+
+# TypeScript build artifacts (ถ้าใช้)
+*.tsbuildinfo
+
+# Misc
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# ========================
+# ✅ Custom for Vite/Nginx
+# ========================
+# Vite cache
+node_modules/.vite/
+
+# Nginx
+nginx.conf.backup

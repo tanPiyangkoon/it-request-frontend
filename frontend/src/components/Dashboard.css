@@ -1,0 +1,119 @@
+/* Orange theme for dashboard */
+.dashboard-container {
+  max-width: 1100px;
+  margin: 2.5rem auto;
+  background: linear-gradient(135deg, #ff9800 60%, #ffb300 100%);
+  border-radius: 16px;
+  box-shadow: 0 2px 16px rgba(255,152,0,0.13);
+  padding: 2.5rem 2rem 2rem 2rem;
+}
+.dashboard-title {
+  color: #fff;
+  margin-bottom: 2rem;
+  font-size: 2rem;
+  font-weight: bold;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(255,152,0,0.18);
+}
+.dashboard-stats {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  margin-bottom: 2.5rem;
+  flex-wrap: wrap;
+}
+.dashboard-card {
+  background: #fff3e0;
+  color: #ff9800;
+  border-radius: 12px;
+  padding: 1.5rem 2.5rem;
+  min-width: 170px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(255,152,0,0.10);
+}
+.dashboard-card-label {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.92;
+}
+.dashboard-card-value {
+  font-size: 2.1rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+.dashboard-pending {
+  color: #ffb300;
+}
+.dashboard-success {
+  color: #43a047;
+}
+.dashboard-cancel {
+  color: #e53935;
+}
+.dashboard-section {
+  margin-top: 2.5rem;
+}
+.dashboard-section h3 {
+  color: #fff;
+  margin-bottom: 1.2rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  text-shadow: 0 2px 8px rgba(255,152,0,0.18);
+}
+.dashboard-table-wrapper {
+  overflow-x: auto;
+}
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1rem;
+  background: #fff3e0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.dashboard-table th, .dashboard-table td {
+  padding: 12px 10px;
+  text-align: left;
+}
+.dashboard-table th {
+  background: #ffe0b2;
+  font-weight: 600;
+  color: #ff9800;
+}
+.dashboard-table tr {
+  border-bottom: 1px solid #ffd180;
+}
+.dashboard-table tr:last-child {
+  border-bottom: none;
+}
+.status-badge {
+  display: inline-block;
+  padding: 0.35em 1em;
+  border-radius: 1em;
+  font-size: 0.98em;
+  font-weight: 500;
+  background: #ffe0b2;
+  color: #ff9800;
+}
+.status-pending {
+  background: #fffbe6;
+  color: #ffb300;
+}
+.status-success, .status-done, .status-approve {
+  background: #e6f9ed;
+  color: #43a047;
+}
+.status-reject, .status-cancel {
+  background: #ffeaea;
+  color: #e53935;
+}
+@media (max-width: 900px) {
+  .dashboard-stats {
+    flex-direction: column;
+    align-items: center;
+  }
+  .dashboard-card {
+    min-width: 90vw;
+    margin-bottom: 1rem;
+  }
+}
