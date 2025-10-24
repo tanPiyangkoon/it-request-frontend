@@ -5,10 +5,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Development files (ใช้แค่ dist ใน production)
-src/
-public/
-
 # Git
 .git
 .gitignore
@@ -16,10 +12,6 @@ public/
 # Documentation
 README.md
 *.md
-
-# Configuration files
-vite.config.js
-eslint.config.js
 
 # IDE
 .vscode/
