@@ -51,17 +51,38 @@ pipeline {
               git clone -b ${GITOPS_BRANCH} ${GITOPS_REPO} k8s-config
               cd k8s-config/base/frontend
 
-              if command -v yq >/dev/null 2>&1; then
-                yq -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\").newTag) = \\"${IMG_TAG}\\"" kustomization.yaml
+              echo "📋 Current kustomization.yaml:"
+              cat kustomization.yaml
+
+              # ลองใช้ kustomize edit set image
+              if command -v kustomize >/dev/null 2>&1; then
+                echo "✅ Using kustomize CLI"
+                kustomize edit set image ${DOCKER_IMAGE}=${DOCKER_IMAGE}:${IMG_TAG}
+              elif command -v yq >/dev/null 2>&1; then
+                echo "✅ Using yq"
+                yq eval -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\") | .newTag) = \\"${IMG_TAG}\\"" kustomization.yaml
               else
-                sed -i "/name: ${DOCKER_IMAGE}/,/newTag:/ s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
+                echo "✅ Using sed (fallback)"
+                # แก้ไข sed pattern ให้รองรับหลายรูปแบบ
+                sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
+              fi
+
+              echo "📋 Updated kustomization.yaml:"
+              cat kustomization.yaml
+
+              # ตรวจสอบว่ามีการเปลี่ยนแปลงหรือไม่
+              if git diff --quiet; then
+                echo "⚠️  No changes detected in kustomization.yaml"
+                exit 0
               fi
 
               git config user.email "jenkins@local"
               git config user.name "Jenkins CI"
               git add kustomization.yaml
-              git commit -m "CI: bump frontend ${DOCKER_IMAGE}:${IMG_TAG}" || true
+              git commit -m "CI: bump frontend ${DOCKER_IMAGE}:${IMG_TAG}"
               git push origin ${GITOPS_BRANCH}
+              
+              echo "✅ Successfully updated and pushed to GitOps repo"
             '''
           }
         }
