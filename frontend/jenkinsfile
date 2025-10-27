@@ -26,14 +26,17 @@ pipeline {
 
 stage('Checkout Code') {
   steps {
-    checkout scm: [
+    checkout([
       $class: 'GitSCM',
       branches: [[name: "*/${APP_BRANCH}"]],
+      doGenerateSubmoduleConfigurations: false,
+      extensions: [],
+      submoduleCfg: [],
       userRemoteConfigs: [[
-        url: "${APP_REPO_URL}",
-        credentialsId: "${APP_GIT_CREDENTIALS}"
+        credentialsId: "${APP_GIT_CREDENTIALS}",
+        url: "${APP_REPO_URL}"
       ]]
-    ]
+    ])
     script {
       def shortSha = sh(script: "git rev-parse --short=11 HEAD", returnStdout: true).trim()
       env.IMG_TAG = "${APP_BRANCH}-${shortSha}-${env.BUILD_NUMBER}"
