@@ -1,0 +1,213 @@
+
+pipeline {
+  agent any
+
+  environment {
+    DOCKER_IMAGE = 'tanpiyangkoon/it-request-frontend'
+    GIT_CONFIG_REPO = 'https://github.com/tanPiyangkoon/it-request-frontend.git'
+    GIT_CONFIG_BRANCH = 'staging'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm  // อ่านจาก SCM ที่ตั้งใน Job
+        script {
+          env.IMG_TAG = "staging-$(git rev-parse --short=11 HEAD)-${BUILD_NUMBER}"
+          echo "Building: ${DOCKER_IMAGE}:${IMG_TAG}"
+        }
+      }
+    }
+
+    stage('Build & Push') {
+      steps {
+        dir('frontend') {
+          sh '''
+            docker build -f Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest .
+          '''
+          withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'U', passwordVariable: 'P')]) {
+            sh '''
+              echo "$P" | docker login -u "$U" --password-stdin
+              docker push ${DOCKER_IMAGE}:${IMG_TAG}
+              docker push ${DOCKER_IMAGE}:latest
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Update GitOps') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'U', passwordVariable: 'P')]) {
+          sh '''
+            rm -rf k8s-config
+            git clone -b ${GIT_CONFIG_BRANCH} ${GIT_CONFIG_REPO} k8s-config
+            cd k8s-config/overlays/staging
+            sed -i "s|newTag:.*|newTag: ${IMG_TAG}|" kustomization.yaml
+            git add kustomization.yaml
+            git commit -m "CI: bump to ${IMG_TAG}" || echo "No changes"
+            git push origin ${GIT_CONFIG_BRANCH} || echo "Push failed (maybe no changes)"
+          '''
+        }
+      }
+    }
+  }
+}
+// frontend/Jenkinsfile
+pipeline {
+  agent any
+
+  environment {
+    // === App Config ===
+    APP_BRANCH           = 'staging'
+    DOCKER_IMAGE         = 'tanpiyangkoon/it-request-frontend'
+    DOCKER_CREDENTIALS   = 'dockerhub-credentials'
+
+    // === GitOps Config ===
+    GIT_CONFIG_REPO      = 'https://github.com/tanPiyangkoon/it-request-frontend-kustomize.git'
+    GIT_CONFIG_BRANCH    = 'main'
+    GIT_CREDENTIALS      = 'github-token'
+
+    // === Node.js Build ===
+    NODE_IMAGE           = 'node:20-alpine'
+  }
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+  }
+
+  stages {
+    stage('Checkout Code') {
+      steps {
+        checkout scm
+        script {
+          def shortSha = sh(script: "git rev-parse --short=11 HEAD", returnStdout: true).trim()
+          env.IMG_TAG = "${APP_BRANCH}-${shortSha}-${BUILD_NUMBER}"
+          env.HOST_UID = sh(script: 'id -u', returnStdout: true).trim()
+          env.HOST_GID = sh(script: 'id -g', returnStdout: true).trim()
+          echo "Building: ${DOCKER_IMAGE}:${IMG_TAG}"
+        }
+      }
+    }
+
+    stage('Build Frontend') {
+      steps {
+        dir('frontend') {
+          script {
+            docker.image(NODE_IMAGE).inside("--user 0:0 -e HOST_UID=${HOST_UID} -e HOST_GID=${HOST_GID}") {
+              sh '''
+                set -e
+                apk add --no-cache git
+                echo "Installing dependencies..."
+                npm ci
+                echo "Building app..."
+                npm run build
+                chown -R "$HOST_UID:$HOST_GID" .
+              '''
+            }
+          }
+        }
+      }
+    }
+
+    stage('Build & Tag Docker Image') {
+      steps {
+        dir('frontend') {
+          sh '''
+            set -e
+            echo "Building Docker image..."
+            docker build -f Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest .
+          '''
+        }
+      }
+    }
+
+    stage('Push to Docker Hub') {
+      steps {
+        script {
+          withCredentials([usernamePassword(
+            credentialsId: DOCKER_CREDENTIALS,
+            usernameVariable: 'DH_USER',
+            passwordVariable: 'DH_TOKEN'
+          )]) {
+            sh '''
+              set -e
+              echo "$DH_TOKEN" | docker login --username "$DH_USER" --password-stdin
+              docker push ${DOCKER_IMAGE}:${IMG_TAG}
+              docker push ${DOCKER_IMAGE}:latest
+              docker logout || true
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Update GitOps (Kustomize)') {
+      steps {
+        script {
+          withCredentials([usernamePassword(
+            credentialsId: GIT_CREDENTIALS,
+            usernameVariable: 'GIT_USER',
+            passwordVariable: 'GIT_TOKEN'
+          )]) {
+            sh '''
+              set -e
+              rm -rf k8s-config
+
+              # Clone GitOps repo
+              git clone -b "${GIT_CONFIG_BRANCH}" "${GIT_CONFIG_REPO}" k8s-config
+              cd k8s-config
+
+              # Determine overlay directory
+              OVERLAY_DIR="overlays/${APP_BRANCH}"
+              [ -d "$OVERLAY_DIR" ] || OVERLAY_DIR="overlays/production"
+              cd "$OVERLAY_DIR"
+
+              echo "=== kustomization.yaml BEFORE ==="
+              cat kustomization.yaml
+
+              # Update image tag
+              if command -v yq >/dev/null 2>&1; then
+                yq -i "(.images[] | select(.name == \"${DOCKER_IMAGE}\").newTag) = \"${IMG_TAG}\"" kustomization.yaml
+              elif command -v kustomize >/dev/null 2>&1; then
+                kustomize edit set image ${DOCKER_IMAGE}=${DOCKER_IMAGE}:${IMG_TAG}
+              else
+                sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
+              fi
+
+              echo "=== kustomization.yaml AFTER ==="
+              cat kustomization.yaml
+
+              # Commit & Push
+              git config user.email "jenkins@local"
+              git config user.name "Jenkins CI"
+              git add kustomization.yaml
+
+              if ! git diff --staged --quiet; then
+                git commit -m "CI: bump ${DOCKER_IMAGE} to ${IMG_TAG}"
+                git push origin "${GIT_CONFIG_BRANCH}"
+                echo "Successfully updated GitOps"
+              else
+                echo "No changes to commit"
+              fi
+            '''
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Build succeeded: ${DOCKER_IMAGE}:${IMG_TAG}"
+    }
+    failure {
+      echo 'Pipeline failed!'
+    }
+    always {
+      cleanWs()
+    }
+  }
+}
