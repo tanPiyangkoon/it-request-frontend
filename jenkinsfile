@@ -1,0 +1,69 @@
+# ไปที่ App repo
+cd ~/it-request-frontend
+
+# ตรวจสอบ
+ls -la Jenkinsfile
+git branch  # ต้องเป็น staging
+
+# ถ้าไม่มี → สร้างใหม่
+cat > Jenkinsfile << 'EOF'
+pipeline {
+  agent any
+
+  environment {
+    DOCKER_IMAGE = 'tanpiyangkoon/it-request-frontend'
+    GIT_CONFIG_REPO = 'https://github.com/tanPiyangkoon/it-request-frontend-kustomize.git'
+    GIT_CONFIG_BRANCH = 'main'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm  // อ่านจาก SCM ที่ตั้งใน Job
+        script {
+          env.IMG_TAG = "staging-$(git rev-parse --short=11 HEAD)-${BUILD_NUMBER}"
+          echo "Building: ${DOCKER_IMAGE}:${IMG_TAG}"
+        }
+      }
+    }
+
+    stage('Build & Push') {
+      steps {
+        dir('frontend') {
+          sh '''
+            docker build -f Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest .
+          '''
+          withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'U', passwordVariable: 'P')]) {
+            sh '''
+              echo "$P" | docker login -u "$U" --password-stdin
+              docker push ${DOCKER_IMAGE}:${IMG_TAG}
+              docker push ${DOCKER_IMAGE}:latest
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Update GitOps') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'U', passwordVariable: 'P')]) {
+          sh '''
+            rm -rf k8s-config
+            git clone -b ${GIT_CONFIG_BRANCH} ${GIT_CONFIG_REPO} k8s-config
+            cd k8s-config/overlays/staging
+            sed -i "s|newTag:.*|newTag: ${IMG_TAG}|" kustomization.yaml
+            git add kustomization.yaml
+            git commit -m "CI: bump to ${IMG_TAG}" || echo "No changes"
+            git push origin ${GIT_CONFIG_BRANCH} || echo "Push failed (maybe no changes)"
+          '''
+        }
+      }
+    }
+  }
+}
+EOF
+
+# Push ไป staging
+git add Jenkinsfile
+git commit -m "add: Jenkinsfile in root"
+git push origin staging
