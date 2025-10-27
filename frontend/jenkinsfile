@@ -24,27 +24,25 @@ pipeline {
     disableConcurrentBuilds()
   }
 
-  stages {
-
-    stage('Checkout Code') {
-      steps {
-        checkout scm: [
-          $class: 'GitSCM',
-          branches: [[name: "*/${APP_BRANCH}"]],  // ใช้ */staging
-          userRemoteConfigs: [[
-          url: "${APP_REPO_URL}",
-          credentialsId: "${APP_GIT_CREDENTIALS}"
+stage('Checkout Code') {
+  steps {
+    checkout scm: [
+      $class: 'GitSCM',
+      branches: [[name: "*/${APP_BRANCH}"]],
+      userRemoteConfigs: [[
+        url: "${APP_REPO_URL}",
+        credentialsId: "${APP_GIT_CREDENTIALS}"
       ]]
     ]
-    script   {
-          def shortSha = sh(script: "git rev-parse --short=11 HEAD", returnStdout: true).trim()
-          env.IMG_TAG = "${APP_BRANCH}-${shortSha}-${env.BUILD_NUMBER}"
-          echo "Image tag: ${env.IMG_TAG}"
-          env.HOST_UID = sh(script: 'id -u', returnStdout: true).trim()
-          env.HOST_GID = sh(script: 'id -g', returnStdout: true).trim()
-       }
-      }
+    script {
+      def shortSha = sh(script: "git rev-parse --short=11 HEAD", returnStdout: true).trim()
+      env.IMG_TAG = "${APP_BRANCH}-${shortSha}-${env.BUILD_NUMBER}"
+      echo "Image tag: ${env.IMG_TAG}"
+      env.HOST_UID = sh(script: 'id -u', returnStdout: true).trim()
+      env.HOST_GID = sh(script: 'id -g', returnStdout: true).trim()
     }
+  }
+}
 
     stage('Build Application') {
       steps {
