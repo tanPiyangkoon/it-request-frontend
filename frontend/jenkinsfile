@@ -24,28 +24,29 @@ pipeline {
     disableConcurrentBuilds()
   }
 
-stage('Checkout Code') {
-  steps {
-    checkout([
-      $class: 'GitSCM',
-      branches: [[name: "*/${APP_BRANCH}"]],
-      doGenerateSubmoduleConfigurations: false,
-      extensions: [],
-      submoduleCfg: [],
-      userRemoteConfigs: [[
-        credentialsId: "${APP_GIT_CREDENTIALS}",
-        url: "${APP_REPO_URL}"
-      ]]
-    ])
-    script {
-      def shortSha = sh(script: "git rev-parse --short=11 HEAD", returnStdout: true).trim()
-      env.IMG_TAG = "${APP_BRANCH}-${shortSha}-${env.BUILD_NUMBER}"
-      echo "Image tag: ${env.IMG_TAG}"
-      env.HOST_UID = sh(script: 'id -u', returnStdout: true).trim()
-      env.HOST_GID = sh(script: 'id -g', returnStdout: true).trim()
+  stages {
+    stage('Checkout Code') {
+      steps {
+        checkout([
+          $class: 'GitSCM',
+          branches: [[name: "*/${APP_BRANCH}"]],
+          doGenerateSubmoduleConfigurations: false,
+          extensions: [],
+          submoduleCfg: [],
+          userRemoteConfigs: [[
+            credentialsId: "${APP_GIT_CREDENTIALS}",
+            url: "${APP_REPO_URL}"
+          ]]
+        ])
+        script {
+          def shortSha = sh(script: "git rev-parse --short=11 HEAD", returnStdout: true).trim()
+          env.IMG_TAG = "${APP_BRANCH}-${shortSha}-${env.BUILD_NUMBER}"
+          echo "Image tag: ${env.IMG_TAG}"
+          env.HOST_UID = sh(script: 'id -u', returnStdout: true).trim()
+          env.HOST_GID = sh(script: 'id -g', returnStdout: true).trim()
+        }
+      }
     }
-  }
-}
 
     stage('Build Application') {
       steps {
@@ -53,13 +54,13 @@ stage('Checkout Code') {
           script {
             docker.image(env.DOCKER_NODE_IMAGE).inside("--user 0:0 -e HOST_UID=${env.HOST_UID} -e HOST_GID=${env.HOST_GID}") {
               sh '''
-set -e
-apk add --no-cache git
-echo "Building application..."
-npm ci
-npm run build
-chown -R "$HOST_UID:$HOST_GID" .
-'''
+                set -e
+                apk add --no-cache git
+                echo "Building application..."
+                npm ci
+                npm run build
+                chown -R "$HOST_UID:$HOST_GID" .
+              '''
             }
           }
         }
@@ -69,10 +70,10 @@ chown -R "$HOST_UID:$HOST_GID" .
     stage('Build & Tag Docker Image') {
       steps {
         sh '''
-set -e
-echo "Building Docker image..."
-docker build -f frontend/Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest ./frontend
-'''
+          set -e
+          echo "Building Docker image..."
+          docker build -f frontend/Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest ./frontend
+        '''
       }
     }
 
@@ -85,12 +86,12 @@ docker build -f frontend/Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IM
             passwordVariable: 'DH_TOKEN'
           )]) {
             sh '''
-set -e
-echo "$DH_TOKEN" | docker login --username "$DH_USER" --password-stdin
-docker push ${DOCKER_IMAGE}:${IMG_TAG}
-docker push ${DOCKER_IMAGE}:latest
-docker logout || true
-'''
+              set -e
+              echo "$DH_TOKEN" | docker login --username "$DH_USER" --password-stdin
+              docker push ${DOCKER_IMAGE}:${IMG_TAG}
+              docker push ${DOCKER_IMAGE}:latest
+              docker logout || true
+            '''
           }
         }
       }
@@ -105,48 +106,48 @@ docker logout || true
             passwordVariable: 'GIT_TOKEN'
           )]) {
             sh '''
-set -e
-rm -rf k8s-config
+              set -e
+              rm -rf k8s-config
 
-set +x
-git config --global url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
-set -x
+              set +x
+              git config --global url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+              set -x
 
-git clone -b "${GIT_CONFIG_BRANCH}" "${GIT_CONFIG_REPO}" k8s-config
-cd k8s-config
+              git clone -b "${GIT_CONFIG_BRANCH}" "${GIT_CONFIG_REPO}" k8s-config
+              cd k8s-config
 
-OVERLAY_DIR="overlays/${APP_BRANCH}"
-[ -d "$OVERLAY_DIR" ] || OVERLAY_DIR="overlays/production"
-cd "$OVERLAY_DIR"
+              OVERLAY_DIR="overlays/${APP_BRANCH}"
+              [ -d "$OVERLAY_DIR" ] || OVERLAY_DIR="overlays/production"
+              cd "$OVERLAY_DIR"
 
-echo "=== kustomization.yaml BEFORE update ==="
-cat kustomization.yaml
+              echo "=== kustomization.yaml BEFORE update ==="
+              cat kustomization.yaml
 
-if command -v yq >/dev/null 2>&1; then
-  yq -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\").newTag) = \\"${IMG_TAG}\\"" kustomization.yaml
-elif command -v kustomize >/dev/null 2>&1; then
-  kustomize edit set image ${DOCKER_IMAGE}=${DOCKER_IMAGE}:${IMG_TAG}
-else
-  sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
-fi
+              if command -v yq >/dev/null 2>&1; then
+                yq -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\").newTag) = \\"${IMG_TAG}\\"" kustomization.yaml
+              elif command -v kustomize >/dev/null 2>&1; then
+                kustomize edit set image ${DOCKER_IMAGE}=${DOCKER_IMAGE}:${IMG_TAG}
+              else
+                sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
+              fi
 
-echo "=== kustomization.yaml AFTER update ==="
-cat kustomization.yaml
+              echo "=== kustomization.yaml AFTER update ==="
+              cat kustomization.yaml
 
-git config user.email "jenkins@local"
-git config user.name "Jenkins CI"
-git add kustomization.yaml
+              git config user.email "jenkins@local"
+              git config user.name "Jenkins CI"
+              git add kustomization.yaml
 
-if ! git diff --staged --quiet; then
-  git commit -m "CI: bump ${DOCKER_IMAGE} to ${IMG_TAG}"
-  git push origin "${GIT_CONFIG_BRANCH}"
-  echo "✅ Successfully pushed updated manifests"
-else
-  echo "⚠️  No changes detected"
-fi
+              if ! git diff --staged --quiet; then
+                git commit -m "CI: bump ${DOCKER_IMAGE} to ${IMG_TAG}"
+                git push origin "${GIT_CONFIG_BRANCH}"
+                echo "Successfully pushed updated manifests"
+              else
+                echo "No changes detected"
+              fi
 
-git config --global --unset url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".insteadof || true
-'''
+              git config --global --unset url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".insteadof || true
+            '''
           }
         }
       }
@@ -154,8 +155,8 @@ git config --global --unset url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".i
   }
 
   post {
-    success { echo "✅ Build succeeded: ${DOCKER_IMAGE}:${IMG_TAG}" }
-    failure { echo '❌ Pipeline failed' }
+    success { echo "Build succeeded: ${DOCKER_IMAGE}:${IMG_TAG}" }
+    failure { echo 'Pipeline failed' }
     always  { cleanWs() }
   }
 }
