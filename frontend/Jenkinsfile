@@ -6,15 +6,18 @@ pipeline {
     APP_BRANCH           = 'staging'
     DOCKER_IMAGE         = 'tanpiyangkoon/it-request-frontend'
     DOCKER_CREDENTIALS   = 'dockerhub-credentials'
+
     GIT_CONFIG_REPO      = 'git@github.com:tanPiyangkoon/it-request-frontend-kustomize.git'
     GIT_CONFIG_BRANCH    = 'main'
-    GIT_CREDENTIALS      = 'github-ssh'
+    GIT_CREDENTIALS      = 'github-ssh'  // SSH Key ID
+
     NODE_IMAGE           = 'node:20-alpine'
   }
 
   options {
     timestamps()
     disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '10'))
   }
 
   stages {
@@ -91,16 +94,25 @@ pipeline {
             mkdir -p ~/.ssh
             cp "$SSH_KEY" ~/.ssh/id_ed25519
             chmod 600 ~/.ssh/id_ed25519
-            ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+            # เพิ่ม GitHub ลง known_hosts (hash)
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
 
             git clone -b "${GIT_CONFIG_BRANCH}" "${GIT_CONFIG_REPO}" k8s-config
             cd k8s-config/overlays/${APP_BRANCH}
 
+            echo "=== kustomization.yaml BEFORE ==="
+            cat kustomization.yaml
+
+            # อัปเดต image tag
             if command -v yq >/dev/null 2>&1; then
               yq -i "(.images[] | select(.name == \"${DOCKER_IMAGE}\").newTag) = \"${env.IMG_TAG}\"" kustomization.yaml
             else
               sed -i "s|newTag: .*|newTag: ${env.IMG_TAG}|" kustomization.yaml
             fi
+
+            echo "=== kustomization.yaml AFTER ==="
+            cat kustomization.yaml
 
             git config user.email "jenkins@local"
             git config user.name "Jenkins CI"
@@ -109,19 +121,25 @@ pipeline {
             if ! git diff --staged --quiet; then
               git commit -m "CI: bump ${DOCKER_IMAGE} to ${env.IMG_TAG}"
               git push origin ${GIT_CONFIG_BRANCH}
-              echo "GitOps updated!"
+              echo "GitOps updated successfully!"
             else
-              echo "No changes"
+              echo "No changes to commit"
             fi
           '''
         }
       }
     }
-  }
+  spying
 
   post {
-    success { echo "SUCCESS: ${DOCKER_IMAGE}:${env.IMG_TAG}" }
-    failure { echo 'FAILED' }
-    always  { cleanWs() }
+    success {
+      echo "SUCCESS: ${DOCKER_IMAGE}:${env.IMG_TAG} deployed via GitOps!"
+    }
+    failure {
+      echo 'Pipeline FAILED!'
+    }
+    always {
+      cleanWs()
+    }
   }
 }
