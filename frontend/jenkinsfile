@@ -2,111 +2,152 @@ pipeline {
   agent any
 
   environment {
+    APP_REPO_URL         = 'https://github.com/tanPiyangkoon/it-request-frontend.git'
+    APP_BRANCH           = 'staging'
+    APP_GIT_CREDENTIALS  = 'github-token'
+
+    DOCKER_REGISTRY       = 'docker.io'
     DOCKER_IMAGE          = 'tanpiyangkoon/it-request-frontend'
     DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
-    GITOPS_REPO           = 'https://github.com/tanPiyangkoon/it-request-frontend-kustomize.git'
-    GITOPS_BRANCH         = 'staging'
-    GITOPS_CREDENTIALS_ID = 'github-token'
+
+    DOCKER_NODE_IMAGE     = 'node:20-alpine'
+
+    GIT_CONFIG_REPO       = 'https://github.com/tanPiyangkoon/it-request-frontend-kustomize.git'
+    GIT_CONFIG_BRANCH     = 'main'
+    GIT_CREDENTIALS_ID    = 'github-token'
+
     ARGOCD_APP            = 'it-request-frontend-service'
+  }
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
   }
 
   stages {
 
-    stage('Checkout') {
+    stage('Checkout Code') {
       steps {
-        git branch: 'main', url: 'https://github.com/tanPiyangkoon/it-request-frontend.git'
+        git branch: "${APP_BRANCH}", url: "${APP_REPO_URL}", credentialsId: "${APP_GIT_CREDENTIALS}"
+        script {
+          def shortSha = sh(script: "git rev-parse --short=11 HEAD", returnStdout: true).trim()
+          env.IMG_TAG = "${APP_BRANCH}-${shortSha}-${env.BUILD_NUMBER}"
+          echo "Image tag: ${env.IMG_TAG}"
+          env.HOST_UID = sh(script: 'id -u', returnStdout: true).trim()
+          env.HOST_GID = sh(script: 'id -g', returnStdout: true).trim()
+        }
       }
     }
 
-    stage('Build & Push Docker Image') {
+    stage('Build Application') {
       steps {
-        script {
-          def shortCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-          env.IMG_TAG = shortCommit
-
-          withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}",
-                                            usernameVariable: 'DOCKER_USER',
-                                            passwordVariable: 'DOCKER_PASS')]) {
-            sh '''
-              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-              docker build -t ${DOCKER_IMAGE}:${IMG_TAG} -f frontend/Dockerfile frontend
-              docker push ${DOCKER_IMAGE}:${IMG_TAG}
-              docker logout
-            '''
+        dir('frontend') {
+          script {
+            docker.image(env.DOCKER_NODE_IMAGE).inside("--user 0:0 -e HOST_UID=${env.HOST_UID} -e HOST_GID=${env.HOST_GID}") {
+              sh '''
+set -e
+apk add --no-cache git
+echo "Building application..."
+npm ci
+npm run build
+chown -R "$HOST_UID:$HOST_GID" .
+'''
+            }
           }
         }
       }
     }
 
-    stage('Update GitOps (Kustomize)') {
+    stage('Build & Tag Docker Image') {
+      steps {
+        sh '''
+set -e
+echo "Building Docker image..."
+docker build -f frontend/Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest ./frontend
+'''
+      }
+    }
+
+    stage('Push Docker Image') {
       steps {
         script {
-          withCredentials([usernamePassword(credentialsId: "${GITOPS_CREDENTIALS_ID}",
-                                            usernameVariable: 'GIT_USER',
-                                            passwordVariable: 'GIT_TOKEN')]) {
+          withCredentials([usernamePassword(
+            credentialsId: "${DOCKER_CREDENTIALS_ID}",
+            usernameVariable: 'DH_USER',
+            passwordVariable: 'DH_TOKEN'
+          )]) {
             sh '''
-              set -e
-              rm -rf k8s-config
-              git config --global url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
-              git clone -b ${GITOPS_BRANCH} ${GITOPS_REPO} k8s-config
-              cd k8s-config/base/frontend
-
-              echo "📋 Current kustomization.yaml:"
-              cat kustomization.yaml
-
-              # ลองใช้ kustomize edit set image
-              if command -v kustomize >/dev/null 2>&1; then
-                echo "✅ Using kustomize CLI"
-                kustomize edit set image ${DOCKER_IMAGE}=${DOCKER_IMAGE}:${IMG_TAG}
-              elif command -v yq >/dev/null 2>&1; then
-                echo "✅ Using yq"
-                yq eval -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\") | .newTag) = \\"${IMG_TAG}\\"" kustomization.yaml
-              else
-                echo "✅ Using sed (fallback)"
-                # แก้ไข sed pattern ให้รองรับหลายรูปแบบ
-                sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
-              fi
-
-              echo "📋 Updated kustomization.yaml:"
-              cat kustomization.yaml
-
-              # ตรวจสอบว่ามีการเปลี่ยนแปลงหรือไม่
-              if git diff --quiet; then
-                echo "⚠️  No changes detected in kustomization.yaml"
-                exit 0
-              fi
-
-              git config user.email "jenkins@local"
-              git config user.name "Jenkins CI"
-              git add kustomization.yaml
-              git commit -m "CI: bump frontend ${DOCKER_IMAGE}:${IMG_TAG}"
-              git push origin ${GITOPS_BRANCH}
-              
-              echo "✅ Successfully updated and pushed to GitOps repo"
-            '''
+set -e
+echo "$DH_TOKEN" | docker login --username "$DH_USER" --password-stdin
+docker push ${DOCKER_IMAGE}:${IMG_TAG}
+docker push ${DOCKER_IMAGE}:latest
+docker logout || true
+'''
           }
         }
       }
     }
 
-    stage('Trigger ArgoCD Sync') {
+    stage('Update Kubernetes Manifests (GitOps)') {
       steps {
         script {
-          sh '''
-            echo "Triggering ArgoCD sync..."
-            argocd app sync ${ARGOCD_APP} --grpc-web --insecure || true
-          '''
+          withCredentials([usernamePassword(
+            credentialsId: "${GIT_CREDENTIALS_ID}",
+            usernameVariable: 'GIT_USER',
+            passwordVariable: 'GIT_TOKEN'
+          )]) {
+            sh '''
+set -e
+rm -rf k8s-config
+
+set +x
+git config --global url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+set -x
+
+git clone -b "${GIT_CONFIG_BRANCH}" "${GIT_CONFIG_REPO}" k8s-config
+cd k8s-config
+
+OVERLAY_DIR="overlays/${APP_BRANCH}"
+[ -d "$OVERLAY_DIR" ] || OVERLAY_DIR="overlays/production"
+cd "$OVERLAY_DIR"
+
+echo "=== kustomization.yaml BEFORE update ==="
+cat kustomization.yaml
+
+if command -v yq >/dev/null 2>&1; then
+  yq -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\").newTag) = \\"${IMG_TAG}\\"" kustomization.yaml
+elif command -v kustomize >/dev/null 2>&1; then
+  kustomize edit set image ${DOCKER_IMAGE}=${DOCKER_IMAGE}:${IMG_TAG}
+else
+  sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
+fi
+
+echo "=== kustomization.yaml AFTER update ==="
+cat kustomization.yaml
+
+git config user.email "jenkins@local"
+git config user.name "Jenkins CI"
+git add kustomization.yaml
+
+if ! git diff --staged --quiet; then
+  git commit -m "CI: bump ${DOCKER_IMAGE} to ${IMG_TAG}"
+  git push origin "${GIT_CONFIG_BRANCH}"
+  echo "✅ Successfully pushed updated manifests"
+else
+  echo "⚠️  No changes detected"
+fi
+
+git config --global --unset url."https://${GIT_USER}:${GIT_TOKEN}@github.com/".insteadof || true
+'''
+          }
         }
       }
     }
   }
 
   post {
-    success {
-      echo "✅ Frontend pipeline completed successfully."
-    }
-    failure {
-      echo "❌ Pipeline failed – check logs."
-    }
+    success { echo "✅ Build succeeded: ${DOCKER_IMAGE}:${IMG_TAG}" }
+    failure { echo '❌ Pipeline failed' }
+    always  { cleanWs() }
   }
 }
