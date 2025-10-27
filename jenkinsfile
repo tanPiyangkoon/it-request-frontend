@@ -69,13 +69,11 @@ pipeline {
 
     stage('Build & Tag Docker Image') {
       steps {
-        dir('frontend') {
-          sh '''
-            set -e
-            echo "Building Docker image..."
-            docker build -f Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest .
-          '''
-        }
+        sh '''
+          set -e
+          echo "Building Docker image..."
+          docker build -f Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest .
+        '''
       }
     }
 
@@ -130,7 +128,7 @@ pipeline {
               elif command -v kustomize >/dev/null 2>&1; then
                 kustomize edit set image ${DOCKER_IMAGE}=${DOCKER_IMAGE}:${IMG_TAG}
               else
-                sed -i "/name: ${DOCKER_IMAGE}/!]b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
+                sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
               fi
 
               echo "=== kustomization.yaml AFTER update ==="
