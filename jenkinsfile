@@ -4,8 +4,8 @@ pipeline {
 
   environment {
     DOCKER_IMAGE = 'tanpiyangkoon/it-request-frontend'
-    GIT_CONFIG_REPO = 'https://github.com/tanPiyangkoon/it-request-frontend-kustomize.git'
-    GIT_CONFIG_BRANCH = 'main'
+    GIT_CONFIG_REPO = 'https://github.com/tanPiyangkoon/it-request-frontend.git'
+    GIT_CONFIG_BRANCH = 'staging'
   }
 
   stages {
