@@ -25,10 +25,10 @@ pipeline {
         checkout scm
         script {
           def shortSha = sh(script: "git rev-parse --short=11 HEAD", returnStdout: true).trim()
-          env.IMG_TAG = "staging-\${shortSha}-\${BUILD_NUMBER}"
+          env.IMG_TAG = "${APP_BRANCH}-${shortSha}-${BUILD_NUMBER}"
           env.HOST_UID = sh(script: 'id -u', returnStdout: true).trim()
           env.HOST_GID = sh(script: 'id -g', returnStdout: true).trim()
-          echo "Building: ${DOCKER_IMAGE}:${IMG_TAG}"
+          echo "Building: ${DOCKER_IMAGE}:${env.IMG_TAG}"
         }
       }
     }
@@ -37,7 +37,7 @@ pipeline {
       steps {
         dir('frontend') {
           script {
-            docker.image(NODE_IMAGE).inside("--user 0:0 -e HOST_UID=${HOST_UID} -e HOST_GID=${HOST_GID}") {
+            docker.image(NODE_IMAGE).inside("--user 0:0 -e HOST_UID=${env.HOST_UID} -e HOST_GID=${env.HOST_GID}") {
               sh '''
                 set -e
                 apk add --no-cache git
@@ -54,10 +54,11 @@ pipeline {
     stage('Build & Tag Docker Image') {
       steps {
         dir('frontend') {
-          sh '''
+          sh """
             set -e
-            docker build -f Dockerfile -t ${DOCKER_IMAGE}:${IMG_TAG} -t ${DOCKER_IMAGE}:latest .
-          '''
+            echo "Building Docker image with tag: ${env.IMG_TAG}"
+            docker build -f Dockerfile -t ${DOCKER_IMAGE}:${env.IMG_TAG} -t ${DOCKER_IMAGE}:latest .
+          """
         }
       }
     }
@@ -69,13 +70,13 @@ pipeline {
           usernameVariable: 'DH_USER',
           passwordVariable: 'DH_TOKEN'
         )]) {
-          sh '''
+          sh """
             set -e
             echo "$DH_TOKEN" | docker login --username "$DH_USER" --password-stdin
-            docker push ${DOCKER_IMAGE}:${IMG_TAG}
+            docker push ${DOCKER_IMAGE}:${env.IMG_TAG}
             docker push ${DOCKER_IMAGE}:latest
             docker logout || true
-          '''
+          """
         }
       }
     }
@@ -87,36 +88,43 @@ pipeline {
           usernameVariable: 'GIT_USER',
           passwordVariable: 'GIT_TOKEN'
         )]) {
-          sh '''
+          sh """
             set -e
             rm -rf k8s-config
             git clone -b "${GIT_CONFIG_BRANCH}" "${GIT_CONFIG_REPO}" k8s-config
             cd k8s-config/overlays/${APP_BRANCH}
 
+            echo "=== kustomization.yaml BEFORE ==="
+            cat kustomization.yaml
+
             if command -v yq >/dev/null 2>&1; then
-              yq -i "(.images[] | select(.name == \"${DOCKER_IMAGE}\").newTag) = \"${IMG_TAG}\"" kustomization.yaml
+              yq -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\").newTag) = \\"${env.IMG_TAG}\\"" kustomization.yaml
             else
-              sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${IMG_TAG}/" kustomization.yaml
+              sed -i "/name: ${DOCKER_IMAGE}/!b; n; s/newTag:.*/newTag: ${env.IMG_TAG}/" kustomization.yaml
             fi
+
+            echo "=== kustomization.yaml AFTER ==="
+            cat kustomization.yaml
 
             git config user.email "jenkins@local"
             git config user.name "Jenkins CI"
             git add kustomization.yaml
 
             if ! git diff --staged --quiet; then
-              git commit -m "CI: bump ${DOCKER_IMAGE} to ${IMG_TAG}"
+              git commit -m "CI: bump ${DOCKER_IMAGE} to ${env.IMG_TAG}"
               git push origin "${GIT_CONFIG_BRANCH}"
+              echo "GitOps updated"
             else
               echo "No changes"
             fi
-          '''
+          """
         }
       }
     }
   }
 
   post {
-    success { echo "SUCCESS: ${DOCKER_IMAGE}:${IMG_TAG}" }
+    success { echo "SUCCESS: ${DOCKER_IMAGE}:${env.IMG_TAG}" }
     failure { echo 'FAILED' }
     always  { cleanWs() }
   }
