@@ -9,7 +9,7 @@ pipeline {
 
     GIT_CONFIG_REPO      = 'git@github.com:tanPiyangkoon/it-request-frontend-kustomize.git'
     GIT_CONFIG_BRANCH    = 'main'
-    GIT_CREDENTIALS      = 'github-ssh'  // SSH Key ID
+    GIT_CREDENTIALS      = 'github-ssh'
 
     NODE_IMAGE           = 'node:20-alpine'
   }
@@ -94,8 +94,6 @@ pipeline {
             mkdir -p ~/.ssh
             cp "$SSH_KEY" ~/.ssh/id_ed25519
             chmod 600 ~/.ssh/id_ed25519
-
-            # เพิ่ม GitHub ลง known_hosts (hash)
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
 
             git clone -b "${GIT_CONFIG_BRANCH}" "${GIT_CONFIG_REPO}" k8s-config
@@ -104,7 +102,6 @@ pipeline {
             echo "=== kustomization.yaml BEFORE ==="
             cat kustomization.yaml
 
-            # อัปเดต image tag
             if command -v yq >/dev/null 2>&1; then
               yq -i "(.images[] | select(.name == \"${DOCKER_IMAGE}\").newTag) = \"${env.IMG_TAG}\"" kustomization.yaml
             else
@@ -129,7 +126,7 @@ pipeline {
         }
       }
     }
-  spying
+  }
 
   post {
     success {
