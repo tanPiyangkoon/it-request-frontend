@@ -8,12 +8,13 @@ RUN npm run build
 
 FROM nginx:alpine
 
-# ลบ default.conf เดิม
+# ลบ default.conf
 RUN rm -f /etc/nginx/conf.d/default.conf
 
-# Copy ไฟล์ของคุณไปแทน
+# Copy ไฟล์ของคุณ
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Copy frontend
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
