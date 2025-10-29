@@ -72,7 +72,7 @@ pipeline {
         )]) {
           sh """
             set -e
-            echo "$DH_TOKEN" | docker login --username "$DH_USER" --password-stdin
+            echo "\$DH_TOKEN" | docker login --username "\$DH_USER" --password-stdin
             docker push ${DOCKER_IMAGE}:${env.IMG_TAG}
             docker push ${DOCKER_IMAGE}:latest
             docker logout || true
@@ -88,11 +88,11 @@ pipeline {
           keyFileVariable: 'SSH_KEY',
           usernameVariable: 'GIT_USER'
         )]) {
-          sh '''
+          sh """#!/bin/bash
             set -e
             rm -rf k8s-config
             mkdir -p ~/.ssh
-            cp "$SSH_KEY" ~/.ssh/id_ed25519
+            cp "\$SSH_KEY" ~/.ssh/id_ed25519
             chmod 600 ~/.ssh/id_ed25519
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
 
@@ -103,7 +103,7 @@ pipeline {
             cat kustomization.yaml
 
             if command -v yq >/dev/null 2>&1; then
-              yq -i "(.images[] | select(.name == \"${DOCKER_IMAGE}\").newTag) = \"${env.IMG_TAG}\"" kustomization.yaml
+              yq -i "(.images[] | select(.name == \\"${DOCKER_IMAGE}\\").newTag) = \\"${env.IMG_TAG}\\"" kustomization.yaml
             else
               sed -i "s|newTag: .*|newTag: ${env.IMG_TAG}|" kustomization.yaml
             fi
@@ -122,7 +122,7 @@ pipeline {
             else
               echo "No changes to commit"
             fi
-          '''
+          """
         }
       }
     }
